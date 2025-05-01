@@ -18,6 +18,7 @@ The main dataset is `crime_data.csv`[here](https://drive.google.com/file/d/1FL1u
 ## Report
 The complete analysis report is available in HTML format :
 - `final_report.html`[here](https://github.com/ChloeShujunYang/crim/blob/main/final_report.html): Contains the full analysis, including methodology, results, and conclusions
+- `final.pdf`[here](https://github.com/ChloeShujunYang/crim/blob/main/final.pdf)
 
 ## Video
 link to the Google Drive: [here](https://drive.google.com/file/d/1R0mC_7Ej3zPO7Ew0cxqOTFNI_RBgbHy_/view?usp=sharing)
