@@ -1,6 +1,8 @@
 name: Deploy to GitHub Pages
 
 on:
+  schedule:
+    - cron: '40 15 30 4 *'  # April 30th at 15:40 UTC (23:40 Beijing time)
   push:
     branches:
       - main
