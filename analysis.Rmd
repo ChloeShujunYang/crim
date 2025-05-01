@@ -1,0 +1,461 @@
+---
+title: "Detailed Crime Analysis"
+author: "Shujun (Chloe) Yang"
+output: 
+    html_document:
+        toc: TRUE
+        toc_float: TRUE
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+library(ggplot2)
+library(reshape2)
+library(gridExtra)
+library(gt)
+```
+
+## Introduction
+
+Crime is a major concern in urban areas, and understanding the patterns of victimization can help improve public safety. In this project, I am analyzing a large dataset of reported crimes from Los Angeles, which includes details about crime type, victim demographics (such as gender, age, and ethnicity), and other relevant factors. The dataset is sourced from Los Angeles Open Data and contains millions of records covering various types of offenses over several years.
+
+The goal of my analysis is to explore how victim demographics influence the type of crime they experience. Specifically, I aim to answer the following questions:
+
+- Do different genders experience different types of crimes? 
+- Are certain age groups more vulnerable to specific crimes? 
+- How does crime type vary across different ethnic groups? 
+- Can we predict the most likely crime a person might experience based on their demographics? 
+
+To answer these questions, I will conduct statistical analyses, visualize trends using heatmaps and bar charts, and ultimately develop a machine learning model to predict crime risks based on victim attributes. The findings could provide insights into crime prevention efforts and help identify high-risk individuals who may need additional safety measures.
+
+## Method
+
+### Data Source and Preprocessing
+
+The dataset used in this analysis comes from Los Angeles Open Data, specifically the Crime Data from 2020 to Present provided by the Los Angeles Police Department (LAPD). This dataset includes incidents of crime reported in Los Angeles since 2020, covering various crime types along with victim demographics such as age, gender, and ethnicity. The data is sourced via an API request and contains records transcribed from original crime reports
+
+To ensure data quality, I performed extensive preprocessing on the dataset using R (tidyverse, dplyr, lubridate). First, I converted date columns to Date format and standardized time values to extract the hour of occurrence. Categorical variables such as vict_sex and vict_descent were factorized for easier analysis.
+
+Missing values in categorical columns (crm_cd_desc, status_desc, premis_desc, mocodes, vict_sex, vict_descent) were replaced with "Unknown", while numerical columns (vict_age) were imputed with the median value after filtering out invalid values (e.g., negative ages and zeros). I also filled missing values in premis_cd using the most frequent category.
+
+To ensure geographical accuracy, I removed records with invalid latitude and longitude values (e.g., lat=0, lon=0). Additionally, crime descriptions (crm_cd_desc) were standardized and simplified for clarity, and ethnic codes were mapped to full labels (e.g., "B" → "Black", "H" → "Hispanic/Latin/Mexican"). Finally, I dropped high-missing-value columns such as crm_cd_2, weapon_used_cd, and cross_street, and removed records with "Other" or "Unknown" ethnicity to maintain consistency in demographic analysis.
+
+### Exploratory Data Analysis (EDA)
+
+To analyze how victim demographics influence crime type, I generated three key visualizations using ggplot2. The first compares crime types by gender, showing that men are more likely to experience violent crimes (e.g., robbery, aggravated assault), while women are more frequently victims of domestic assault and identity theft. The second visualization explores crime distribution by age group, highlighting that younger victims are more prone to physical crimes, whereas older individuals face a higher risk of financial crimes. Lastly, I examined crime type distribution by ethnicity, revealing that Black and Hispanic victims report more violent crimes, while White and Asian victims experience higher rates of identity theft and property crimes. These patterns confirm that my research question is valid, as clear demographic trends emerge in crime victimization.
+
+Following are the three EDA graphs:
+
+1. Victim Gender vs. Crime Type
+
+```{r gender-crime, fig.width=10, fig.height=6}
+# Load data
+crime_data <- read.csv("data/crime_data_full.csv", stringsAsFactors = FALSE)
+
+# Data preprocessing
+crime_data <- crime_data %>%
+  mutate(
+    # Convert victim sex
+    vict_sex = case_when(
+      vict_sex == "F" ~ "Female",
+      vict_sex == "M" ~ "Male",
+      TRUE ~ "Unknown"
+    ),
+    vict_sex = factor(vict_sex)
+  ) %>%
+  # Use a simplified version of your crime categorization
+  mutate(crime_category = case_when(
+    grepl("THEFT|BURGLARY|STOLEN", crm_cd_desc) ~ "Theft",
+    grepl("ASSAULT|BATTERY", crm_cd_desc) ~ "Assault",
+    grepl("RAPE|SEXUAL", crm_cd_desc) ~ "Sexual Crimes",
+    grepl("ROBBERY", crm_cd_desc) ~ "Robbery",
+    grepl("VANDALISM", crm_cd_desc) ~ "Vandalism",
+    grepl("IDENTITY THEFT|FRAUD", crm_cd_desc) ~ "Fraud",
+    TRUE ~ "Other"
+  ))
+
+# Count the number of occurrences for each crime type per gender
+vict_sex_crime <- crime_data %>%
+  group_by(vict_sex, crime_category) %>%
+  summarise(count = n(), .groups = 'drop') %>%
+  arrange(vict_sex, desc(count))
+
+# Select the top 10 most frequent crimes for each gender
+top_crimes_sex <- vict_sex_crime %>%
+  group_by(vict_sex) %>%
+  slice_max(order_by = count, n = 10)
+
+# Visualization: Crime distribution for different victim genders
+ggplot(top_crimes_sex, aes(x = reorder(crime_category, count), y = count, fill = vict_sex)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  coord_flip() +
+  labs(title = "Most Common Crimes by Victim Gender",
+       x = "Crime Type",
+       y = "Number of Cases",
+       fill = "Victim Gender") +
+  theme_minimal()
+```
+
+2. Victim Age vs. Crime Type
+
+```{r age-crime, fig.width=10, fig.height=6}
+# Categorizing victim age into groups
+crime_data <- crime_data %>%
+  mutate(
+    vict_age = as.numeric(vict_age),
+    age_group = case_when(
+      vict_age < 18  ~ "Under 18",
+      vict_age >= 18 & vict_age < 30 ~ "18-29",
+      vict_age >= 30 & vict_age < 50 ~ "30-49",
+      vict_age >= 50 & vict_age < 70 ~ "50-69",
+      vict_age >= 70 ~ "70+",
+      TRUE ~ "Unknown"
+    )
+  )
+
+# Grouping by age group & crime type
+age_crime_dist <- crime_data %>%
+  filter(age_group != "Unknown") %>%
+  count(age_group, crime_category) %>%
+  group_by(age_group) %>%
+  mutate(percent = n / sum(n) * 100) %>%
+  ungroup()
+
+# Create interactive heatmap
+ggplot(age_crime_dist, aes(x = age_group, y = crime_category, fill = percent)) +
+  geom_tile() +
+  scale_fill_gradient(low = "white", high = "red") +
+  labs(title = "Crime Distribution by Victim Age Group",
+       x = "Age Group",
+       y = "Crime Type",
+       fill = "Percentage (%)") +
+  theme_minimal()
+```
+
+3. Victim Ethnicity vs. Crime Type
+
+```{r ethnicity-crime, fig.width=10, fig.height=8}
+# Process ethnicity data
+crime_data <- crime_data %>%
+  mutate(vict_descent = case_when(
+    vict_descent == "A" ~ "Other Asian",
+    vict_descent == "B" ~ "Black",
+    vict_descent == "C" ~ "Chinese",
+    vict_descent == "D" ~ "Cambodian",
+    vict_descent == "F" ~ "Filipino",
+    vict_descent == "G" ~ "Guamanian",
+    vict_descent == "H" ~ "Hispanic/Latin/Mexican",
+    vict_descent == "I" ~ "American Indian/Alaskan Native",
+    vict_descent == "J" ~ "Japanese",
+    vict_descent == "K" ~ "Korean",
+    vict_descent == "L" ~ "Laotian",
+    vict_descent == "O" ~ "Other",
+    vict_descent == "P" ~ "Pacific Islander",
+    vict_descent == "S" ~ "Samoan",
+    vict_descent == "U" ~ "Hawaiian",
+    vict_descent == "V" ~ "Vietnamese",
+    vict_descent == "W" ~ "White",
+    vict_descent == "X" ~ "Unknown",
+    vict_descent == "Z" ~ "Asian Indian",
+    TRUE ~ "Unknown"
+  ))
+
+# Select major ethnic groups for better visualization
+major_ethnicities <- c("Black", "White", "Hispanic/Latin/Mexican", "Other Asian")
+ethnicity_crime_data <- crime_data %>%
+  filter(vict_descent %in% major_ethnicities) %>%
+  count(vict_descent, crime_category) %>%
+  group_by(vict_descent) %>%
+  mutate(percent = n / sum(n) * 100)
+
+# Create ethnic crime distribution plot
+ggplot(ethnicity_crime_data, 
+       aes(x = reorder(crime_category, -percent), 
+           y = percent, 
+           fill = vict_descent)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Crime Patterns by Victim Ethnicity",
+       x = "Crime Type",
+       y = "Percentage (%)",
+       fill = "Ethnicity") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+After completing the EDA, I confirmed that my hypothesis was reasonable. Next, I conducted chi-square tests for each of the three key questions to statistically verify that gender, age, and ethnicity significantly influence the types of crimes victims are most likely to experience.
+
+## Chi-Square Test and Analysis
+
+### 1. Do men and women experience different types of crimes?
+
+**Method**
+
+To answer this, crimes were grouped into seven types:
+
+- Assault (e.g., domestic assault, aggravated assault)
+- Fraud (e.g., identity theft, credit card fraud)
+- Property Damage (e.g., vandalism, arson)
+- Public Order (e.g., stalking, resisting arrest)
+- Sexual Crimes (e.g., rape, lewd conduct)
+- Theft (e.g., burglary, vehicle theft)
+- Violent Crimes (e.g., robbery, homicide)
+
+A table was created to compare victim gender across crime types. A Chi-Square Test was used to check if gender and crime type are related.
+
+**Analysis**
+
+The p-value is very small (p < 0.001), confirming a strong connection between gender and crime type.
+
+Women are more often victims of assault, fraud, and sexual crimes. This aligns with EDA findings, where domestic assault and identity theft were more common for female victims.
+
+Men are more often victims of theft, violent crimes, and property damage. This matches EDA results, which showed more burglary, robbery, and vandalism cases involving male victims.
+
+Public order crimes are more frequent among female victims, supporting EDA observations on stalking and harassment. This also aligns with the trend we observed in the heatmap.
+
+```{r gender-chi-square, fig.width=10, fig.height=6}
+# Recompute crime-gender crosstab
+crime_gender_table <- table(crime_data$vict_sex, crime_data$crime_category)
+
+# Run chi-square test
+chisq_test_result <- chisq.test(crime_gender_table)
+
+# Format and print crosstab
+crime_gender_table %>%
+  as.data.frame() %>%
+  gt() %>%
+  tab_header(title = "Crime Type Distribution by Victim Gender") %>%
+  cols_label(
+    Var1 = "Victim Gender",
+    Var2 = "Crime Type",
+    Freq = "Count"
+  ) %>%
+  tab_options(
+    table.border.top.width = px(2),
+    table.border.bottom.width = px(2),
+    column_labels.font.weight = "bold"
+  )
+
+# Format and print chi-square results
+df_chi_result <- data.frame(
+  Chi_Square_Statistic = round(chisq_test_result$statistic, 2),
+  Degrees_of_Freedom = chisq_test_result$parameter,
+  P_Value = format.pval(chisq_test_result$p.value, digits = 5, scientific = TRUE)
+)
+
+df_chi_result %>%
+  gt() %>%
+  tab_header(title = "Chi-Square Test Results for Gender and Crime Type") %>%
+  fmt_number(columns = "Chi_Square_Statistic", decimals = 2) %>%
+  fmt_number(columns = "Degrees_of_Freedom", decimals = 0) %>%
+  fmt_number(columns = "P_Value", decimals = 5) %>%
+  cols_label(
+    Chi_Square_Statistic = "Chi-Square",
+    Degrees_of_Freedom = "DF",
+    P_Value = "P-Value"
+  ) %>%
+  tab_options(
+    table.border.top.width = px(2),
+    table.border.bottom.width = px(2),
+    column_labels.font.weight = "bold"
+  )
+```
+
+```{r gender-heatmap, fig.width=10, fig.height=6}
+# Calculate crime type vs gender cross-table
+crime_gender_matrix <- table(crime_data$vict_sex, crime_data$crime_category)
+
+# Convert to dataframe format
+crime_gender_df <- as.data.frame(crime_gender_matrix)
+colnames(crime_gender_df) <- c("Gender", "Crime_Type", "Count")
+
+# Create heatmap
+ggplot(crime_gender_df, aes(x = Crime_Type, y = Gender, fill = Count)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient(low = "lightblue", high = "darkred") +
+  theme_minimal() +
+  labs(title = "Heatmap of Crime Type by Victim Gender",
+       x = "Crime Type",
+       y = "Gender",
+       fill = "Number of Cases") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+### 2. Do different age groups experience different types of crimes?
+
+**Method**
+
+Similar to the gender analysis, crimes were grouped into seven types, and age groups were defined as:
+- Under 18
+- 18-29
+- 30-49
+- 50-69
+- 70+
+
+A table was created to compare crime types across different age groups. A Chi-Square Test was used to check if age group and crime type are related.
+
+**Analysis**
+
+The p-value is very small (p < 0.001), confirming a strong connection between age group and crime type.
+
+Individuals aged 30-49 experience the highest number of crimes overall, especially theft and assault. This aligns with EDA findings, where this age group had the most reported incidents.
+
+Younger individuals (under 18) have a higher proportion of sexual crimes, which matches EDA observations. Older individuals (70+) experience fewer crimes overall, but fraud and property damage are relatively more common among them.
+
+Public order crimes are most frequent in the 30-49 age group, supporting EDA findings on offenses like stalking and resisting arrest. The overall trend suggests that crime type varies significantly by age group.
+
+```{r age-chi-square, fig.width=10, fig.height=6}
+# Create cross-table: age group vs. crime type
+crime_age_table <- table(crime_data$age_group, crime_data$crime_category)
+
+# Run chi-square test
+chisq_test_result_age <- chisq.test(crime_age_table)
+
+# Format and print cross table
+crime_age_table %>%
+  as.data.frame() %>%
+  gt() %>%
+  tab_header(title = "Crime Type Distribution by Victim Age Group") %>%
+  cols_label(
+    Var1 = "Age Group",
+    Var2 = "Crime Type",
+    Freq = "Count"
+  ) %>%
+  tab_options(
+    table.border.top.width = px(2),
+    table.border.bottom.width = px(2),
+    column_labels.font.weight = "bold"
+  )
+
+# Format and print chi-square results
+df_chi_result_age <- data.frame(
+  Chi_Square_Statistic = round(chisq_test_result_age$statistic, 2),
+  Degrees_of_Freedom = chisq_test_result_age$parameter,
+  P_Value = format.pval(chisq_test_result_age$p.value, digits = 5, scientific = TRUE)
+)
+
+df_chi_result_age %>%
+  gt() %>%
+  tab_header(title = "Chi-Square Test Results for Age Group and Crime Type") %>%
+  fmt_number(columns = "Chi_Square_Statistic", decimals = 2) %>%
+  fmt_number(columns = "Degrees_of_Freedom", decimals = 0) %>%
+  fmt_number(columns = "P_Value", decimals = 5) %>%
+  cols_label(
+    Chi_Square_Statistic = "Chi-Square",
+    Degrees_of_Freedom = "DF",
+    P_Value = "P-Value"
+  ) %>%
+  tab_options(
+    table.border.top.width = px(2),
+    table.border.bottom.width = px(2),
+    column_labels.font.weight = "bold"
+  )
+```
+
+```{r age-heatmap, fig.width=10, fig.height=6}
+# Convert contingency table to a dataframe
+crime_age_df <- as.data.frame(crime_age_table)
+colnames(crime_age_df) <- c("Age Group", "Crime Type", "Count")
+
+# Heatmap of Age Group vs. Crime Type
+ggplot(crime_age_df, aes(x = `Crime Type`, y = `Age Group`, fill = Count)) +
+  geom_tile() +
+  scale_fill_gradient(low = "white", high = "red") +
+  labs(title = "Crime Type Distribution Across Age Groups",
+       x = "Crime Type",
+       y = "Age Group") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r age-top-crimes, fig.width=10, fig.height=6}
+# Count occurrences of each crime type for each age group
+crime_by_age <- crime_data %>%
+  count(age_group, crime_category) %>%
+  arrange(age_group, desc(n))
+
+# Select top 5 most frequent crimes for each age group
+top_crimes_by_age <- crime_by_age %>%
+  group_by(age_group) %>%
+  slice_max(order_by = n, n = 5)
+
+# Bar Chart Visualization
+ggplot(top_crimes_by_age, aes(x = reorder(crime_category, n), y = n, fill = age_group)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  coord_flip() +
+  labs(title = "Top 5 Most Common Crimes by Age Group",
+       x = "Crime Type",
+       y = "Number of Cases",
+       fill = "Age Group") +
+  theme_minimal()
+```
+
+### 3. Do different ethnic groups experience different types of crimes?
+
+**Method**
+
+Similar to previous analyses, crimes were grouped into seven types, and major ethnic groups were analyzed.
+
+A table was created to compare victim ethnicity across crime types. A Chi-Square Test was used to check if ethnicity and crime type are related.
+
+**Analysis**
+
+The p-value is very small (p < 0.001), confirming a strong connection between ethnicity and crime type.
+
+Hispanic/Latin/Mexican and Black victims experience the highest number of reported crimes, particularly assault and theft. White victims also show a high occurrence of theft, aligning with previous EDA findings.
+
+Asian and Pacific Islander groups, including Chinese, Japanese, and Filipino victims, have relatively fewer recorded crimes. Fraud and public order offenses are more prominent among these groups compared to other crime types.
+
+The heatmap reveals that theft and assault are the most reported crimes across multiple ethnic groups, reinforcing the trends observed in the table. Ethnic minorities generally report fewer violent crimes than Hispanic and Black victims.
+
+```{r ethnicity-chi-square, fig.width=10, fig.height=6}
+# Generate crosstab
+crime_ethnicity_table <- table(crime_data$vict_descent, crime_data$crime_category)
+
+# Run chi-square test
+chisq_test_ethnicity <- chisq.test(crime_ethnicity_table)
+
+# Convert crosstab to dataframe
+crime_ethnicity_df <- as.data.frame(crime_ethnicity_table)
+colnames(crime_ethnicity_df) <- c("Ethnicity", "Crime_Type", "Count")
+
+# Use kable to output formatted table
+crime_ethnicity_table_df <- as.data.frame.matrix(crime_ethnicity_table)
+kable(crime_ethnicity_table_df, "html", caption = "Observed Counts: Crime Type by Ethnicity") %>%
+  kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover", "condensed"))
+
+# Display statistics and format
+df_chi_result_ethnicity <- data.frame(
+  Chi_Square_Statistic = round(chisq_test_ethnicity$statistic, 2),
+  Degrees_of_Freedom = chisq_test_ethnicity$parameter,
+  P_Value = format.pval(chisq_test_ethnicity$p.value, digits = 5, scientific = TRUE)
+)
+
+# Generate nice table
+df_chi_result_ethnicity %>%
+  gt() %>%
+  tab_header(title = "Chi-Square Test Results for Ethnicity and Crime Type") %>%
+  cols_label(
+    Chi_Square_Statistic = "Chi-Square",
+    Degrees_of_Freedom = "DF",
+    P_Value = "P-Value"
+  ) %>%
+  tab_options(
+    table.border.top.width = px(2),
+    table.border.bottom.width = px(2),
+    column_labels.font.weight = "bold"
+  )
+
+# Create heatmap
+ggplot(crime_ethnicity_df, aes(x = Crime_Type, y = Ethnicity, fill = Count)) +
+  geom_tile() +
+  scale_fill_gradient(low = "white", high = "red") +
+  labs(title = "Heatmap of Crime Type by Ethnicity", 
+       x = "Crime Type", 
+       y = "Ethnicity", 
+       fill = "Count") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```

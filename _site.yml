@@ -1,0 +1,27 @@
+name: "LA Crime Analysis"
+output_dir: "docs"
+navbar:
+  title: "LA Crime Analysis"
+  left:
+    - text: "Home"
+      href: index.html
+    - text: "Analysis"
+      href: analysis.html
+    - text: "Visualizations"
+      href: visualizations.html
+    - text: "Machine Learning"
+      href: ml.html
+    - text: "Download Report"
+      href: https://github.com/ChloeShujunYang/crim
+  right:
+    - icon: fa-github fa-lg
+      href: https://github.com/ChloeShujunYang/crim
+output:
+  html_document:
+    theme: cosmo
+    css: styles.css
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    number_sections: true
+    highlight: default

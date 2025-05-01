@@ -1,0 +1,234 @@
+---
+title: "What types of crimes are different victim demographics more likely to experience?"
+author: "shujun (chloe) Yang"
+output: 
+    html_document:
+        toc: TRUE
+        toc_float: TRUE
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+[View midterm.html on
+GitHub](https://github.com/ChloeShujunYang/JSC370-labs/blob/main/midterm)
+
+## Introduction
+
+Crime is a major concern in urban areas, and understanding the patterns
+of victimization can help improve public safety. In this project, I am
+analyzing a large dataset of reported crimes from Los Angeles, which
+includes details about crime type, victim demographics (such as gender,
+age, and ethnicity), and other relevant factors. The dataset is sourced
+from Los Angeles Open Data and contains millions of records covering
+various types of offenses over several years.
+
+The goal of my analysis is to explore how victim demographics influence
+the type of crime they experience. Specifically, I aim to answer the
+following questions:
+
+Do different genders experience different types of crimes? Are certain
+age groups more vulnerable to specific crimes? How does crime type vary
+across different ethnic groups? Can we predict the most likely crime a
+person might experience based on their demographics? To answer these
+questions, I will conduct statistical analyses, visualize trends using
+heatmaps and bar charts, and ultimately develop a machine learning model
+to predict crime risks based on victim attributes. The findings could
+provide insights into crime prevention efforts and help identify
+high-risk individuals who may need additional safety measures.
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+library(tidyverse)
+library(plotly)
+library(DT)
+library(ggplot2)
+library(reshape2)
+library(knitr)
+library(lubridate)
+```
+
+## Interactive Visualization 1: Crime Types by Victim Gender
+This visualization shows how different genders experience different types of crimes. The interactive bar chart allows you to hover over bars to see exact counts and compare crime types between genders.
+
+```{r}
+# Read the data
+crime_data <- read.csv("data/crime_data_full.csv")
+
+# Data preprocessing (similar to your midterm code)
+crime_data <- crime_data %>%
+  mutate(
+    # Convert victim sex
+    vict_sex = case_when(
+      vict_sex == "F" ~ "Female",
+      vict_sex == "M" ~ "Male",
+      TRUE ~ "Unknown"
+    ),
+    vict_sex = factor(vict_sex)
+  ) %>%
+  # Use a simplified version of your crime categorization
+  mutate(crime_category = case_when(
+    grepl("THEFT|BURGLARY|STOLEN", crm_cd_desc) ~ "Theft",
+    grepl("ASSAULT|BATTERY", crm_cd_desc) ~ "Assault",
+    grepl("RAPE|SEXUAL", crm_cd_desc) ~ "Sexual Crimes",
+    grepl("ROBBERY", crm_cd_desc) ~ "Robbery",
+    grepl("VANDALISM", crm_cd_desc) ~ "Vandalism",
+    grepl("IDENTITY THEFT|FRAUD", crm_cd_desc) ~ "Fraud",
+    TRUE ~ "Other"
+  ))
+
+# Get top 10 crime types
+top_crimes <- crime_data %>%
+  count(crime_category) %>%
+  arrange(desc(n)) %>%
+  head(10) %>%
+  pull(crime_category)
+
+# Filter data
+crime_by_gender <- crime_data %>%
+  filter(vict_sex %in% c("Male", "Female"), 
+         crime_category %in% top_crimes) %>%
+  count(vict_sex, crime_category) %>%
+  group_by(vict_sex) %>%
+  mutate(percent = n / sum(n) * 100)
+
+# Create interactive plot
+p1 <- ggplot(crime_by_gender, aes(x = reorder(crime_category, -n), y = n, fill = vict_sex)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Top Crime Types by Victim Gender",
+       x = "Crime Type",
+       y = "Number of Cases",
+       fill = "Gender") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+ggplotly(p1, tooltip = c("y", "fill")) %>%
+  layout(legend = list(orientation = "h", y = -0.2))
+```
+
+Figure 1: This chart shows the distribution of different crime types between male and female victims. The interactive elements allow you to hover over bars to see exact counts for each gender and crime type combination.
+
+## Interactive Visualization 2: Crime Distribution by Victim Age Group
+This visualization explores how different age groups experience various types of crimes. The interactive heatmap shows the relative frequency of different crime types across age groups.
+```{r}
+# Process age data
+crime_data <- crime_data %>%
+  mutate(
+    vict_age = as.numeric(vict_age),
+    age_group = case_when(
+      vict_age < 18  ~ "Under 18",
+      vict_age >= 18 & vict_age < 30 ~ "18-29",
+      vict_age >= 30 & vict_age < 50 ~ "30-49",
+      vict_age >= 50 & vict_age < 70 ~ "50-69",
+      vict_age >= 70 ~ "70+",
+      TRUE ~ "Unknown"
+    )
+  )
+
+# Create age-crime heatmap data
+age_crime_heatmap <- crime_data %>%
+  filter(age_group != "Unknown") %>%
+  count(age_group, crime_category) %>%
+  group_by(age_group) %>%
+  mutate(percent = n / sum(n) * 100)
+
+# Create interactive heatmap
+p2 <- ggplot(age_crime_heatmap, aes(x = age_group, y = crime_category, fill = percent)) +
+  geom_tile() +
+  scale_fill_gradient(low = "white", high = "red") +
+  labs(title = "Crime Distribution by Victim Age Group",
+       x = "Age Group",
+       y = "Crime Type",
+       fill = "Percentage (%)") +
+  theme_minimal()
+
+ggplotly(p2, tooltip = c("x", "y", "fill"))
+```
+
+Figure 2: This heatmap shows the distribution of crime types across different age groups. Darker colors represent higher percentages. You can hover over each cell to see the exact percentage of a specific crime type within each age group.
+
+## Interactive Visualization 3: Crime Map by Location
+This visualization shows the geographic distribution of crimes across Los Angeles. The interactive map allows you to explore crime hotspots and patterns by location.
+```{r}
+# Filter data for map (to avoid overplotting)
+map_data <- crime_data %>%
+  filter(!is.na(lat) & !is.na(lon)) %>%
+  filter(lat != 0 & lon != 0) %>%
+  sample_n(5000)  # Sample to improve performance
+
+# Create base plot
+p3 <- ggplot(map_data, aes(x = lon, y = lat, color = crime_category, text = paste(
+  "Crime Type:", crime_category, "<br>",
+  "Date:", as.Date(date_occ), "<br>",
+  "Time:", time_occ, "<br>",
+  "Area:", area_name
+))) +
+  geom_point(alpha = 0.7, size = 2) +
+  labs(title = "Crime Locations in Los Angeles",
+       x = "Longitude",
+       y = "Latitude",
+       color = "Crime Type") +
+  theme_minimal()
+
+# Convert to interactive plot
+ggplotly(p3, tooltip = "text") %>%
+  layout(legend = list(orientation = "h", y = -0.2))
+```
+
+Figure 3: This map shows the geographic distribution of different crime types across Los Angeles. Each point represents a crime incident, colored by type. You can hover over points to see details about each incident, including the type, date, time, and area.
+
+##Interactive Visualization 4: Crime Trends Over Time
+This visualization shows how crime patterns have changed over time in Los Angeles, allowing you to identify seasonal patterns and long-term trends.
+```{r}
+# Process date data
+crime_data <- crime_data %>%
+  mutate(date_occ = as.Date(date_occ)) %>%
+  filter(!is.na(date_occ))
+
+# Aggregate crimes by month
+monthly_crimes <- crime_data %>%
+  mutate(month = floor_date(date_occ, "month")) %>%
+  count(month, crime_category) %>%
+  filter(month >= as.Date("2020-01-01"))
+
+# Create time series plot
+p4 <- ggplot(monthly_crimes, aes(x = month, y = n, color = crime_category, group = crime_category)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Monthly Crime Trends by Type",
+       x = "Month",
+       y = "Number of Incidents",
+       color = "Crime Type") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+ggplotly(p4, tooltip = c("x", "y", "color"))
+
+```
+
+Figure 4: This time series plot shows how different crime types have varied by month. The interactive features allow you to hover over data points to see exact counts for specific months and crime types. You can also click on crime types in the legend to hide or show them.
+
+##Interactive Data Table
+The table below provides an interactive way to explore the raw data. You can search, filter, and sort the entries to find specific patterns or cases of interest.
+```{r}
+# Create a sample of the data for display (to avoid overwhelming the browser)
+sample_data <- crime_data %>%
+  select(date_occ, crime_category, vict_sex, age_group, vict_descent, area_name) %>%
+  sample_n(1000)
+
+datatable(sample_data, 
+          options = list(pageLength = 10, 
+                         searchHighlight = TRUE,
+                         scrollX = TRUE),
+          caption = "Sample of LA Crime Data")
+
+```
+
+## Summary and Interpretation
+The interactive visualizations presented on this page reveal several important patterns in Los Angeles crime data:
+
+Gender differences in victimization: Men and women experience different types of crimes, with men more likely to be victims of theft, assault, and robbery, while women are more frequently victims of sexual crimes and certain types of fraud.
+Age-related crime patterns: Different age groups show distinct crime victimization patterns. Young adults (18-29) experience higher rates of robbery and assault, while older adults are more likely to be victims of fraud and property crimes.
+Geographic crime distribution: Crime is not evenly distributed across Los Angeles. Certain neighborhoods have higher concentrations of specific crime types, which could be related to socioeconomic factors, policing patterns, or urban infrastructure.
+Temporal trends: Crime rates fluctuate throughout the year, with some crime types showing seasonal patterns. Understanding these temporal trends can help with resource allocation for crime prevention efforts.

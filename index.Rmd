@@ -1,0 +1,35 @@
+---
+title: "Los Angeles Crime Analysis"
+---
+
+# Project Overview
+
+This comprehensive analysis explores crime patterns in Los Angeles, focusing on understanding the relationships between demographic factors and crime types. Our analysis combines statistical methods with machine learning approaches to uncover meaningful insights that could inform public safety strategies.
+
+## Key Features
+
+### [Statistical Analysis](analysis.html)
+- Demographic patterns in crime incidents
+- Temporal and spatial distribution of crimes
+- Statistical significance testing
+
+### [Interactive Visualizations](visualizations.html)
+- Crime distribution maps
+- Temporal trend analysis
+- Demographic breakdowns
+
+### [Machine Learning Models](ml.html)
+- Crime type prediction
+- Feature importance analysis
+- Model performance evaluation
+
+## Quick Links
+
+- [View Analysis Report](analysis.html)
+- [Explore Visualizations](visualizations.html)
+- [Machine Learning Results](ml.html)
+- [Download Full Report](https://github.com/ChloeShujunYang/crim)
+
+## About This Project
+
+This project was developed as part of the JSC370 course at the University of Toronto. It demonstrates the application of data science techniques to real-world public safety challenges, combining statistical analysis with machine learning approaches to understand crime patterns in Los Angeles.
