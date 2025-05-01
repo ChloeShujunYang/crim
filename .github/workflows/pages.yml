@@ -1,12 +1,13 @@
 name: Deploy to GitHub Pages
 
 on:
-  schedule:
-    - cron: '40 15 30 4 *'  # April 30th at 15:40 UTC (23:40 Beijing time)
   push:
     branches:
       - main
   workflow_dispatch:
+
+env:
+  DEPLOY_TIME: '2025-04-30T23:40:00Z'
 
 permissions:
   contents: read
@@ -52,6 +53,10 @@ jobs:
       - name: Build site
         run: |
           R -e 'rmarkdown::render_site()'
+          
+      - name: Set deployment time
+        run: |
+          echo "DEPLOY_TIME=$(date -d '2025-04-30 23:40:00')" >> $GITHUB_ENV
           
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
